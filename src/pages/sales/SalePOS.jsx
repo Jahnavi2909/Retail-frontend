@@ -1,14 +1,8 @@
 // src/pages/sales/SalePOS.jsx
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import "../../styles/SalePOS.css";
-import {
-  Search,
-  ShoppingCart,
-  Trash2,
-  LogOut,
-  CreditCard,
-  QrCode,
-} from "lucide-react";
+import { Scanner } from "@yudiel/react-qr-scanner";
+import { Search, ShoppingCart, Trash2, LogOut, CreditCard, QrCode } from "lucide-react";
 import { getProducts, searchProducts } from "../../services/ProductsService";
 import SalesService from "../../services/SalesService";
 import AuthService from "../../services/AuthService";
@@ -51,7 +45,8 @@ export default function SalePOS() {
   // cart + totals
   const [cart, setCart] = useState([]);
   const [discount, setDiscount] = useState(0);
-  const [paymentMode, setPaymentMode] = useState("CASH"); // CASH | UPI | CARD
+  // store paymentMode as UPPERCASE keys to simplify checks
+  const [paymentMode, setPaymentMode] = useState("CASH"); // "CASH" | "UPI" | "CARD"
 
   // cashier id (numeric)
   const [cashierIdInput, setCashierIdInput] = useState("");
@@ -59,7 +54,7 @@ export default function SalePOS() {
   // UPI
   const [upiId, setUpiId] = useState("");
   const [upiError, setUpiError] = useState("");
-  const [upiRefreshKey, setUpiRefreshKey] = useState(0); // force QR refresh when needed
+  const [upiRefreshKey, setUpiRefreshKey] = useState(0);
 
   // Card
   const [cardNumber, setCardNumber] = useState("");
@@ -70,7 +65,12 @@ export default function SalePOS() {
   // submission
   const [loadingFinalize, setLoadingFinalize] = useState(false);
 
-  // On mount: load small fallback product list
+  // QR scanner toggles (off by default)
+  const [cameraEnabled, setCameraEnabled] = useState(false);
+  const lastScannedRef = useRef(null);
+  const scanCooldownRef = useRef(null);
+
+  // load fallback products (small set) on mount
   useEffect(() => {
     (async () => {
       try {
@@ -88,7 +88,7 @@ export default function SalePOS() {
     })();
   }, []);
 
-  // Perform product search using your provided searchProducts helper
+  // search
   const performProductSearch = async (term) => {
     const q = (term || "").toString().trim();
     setSearchError("");
@@ -124,7 +124,7 @@ export default function SalePOS() {
   };
   const onSearchClick = () => performProductSearch(searchTerm);
 
-  // add to cart
+  // cart operations
   const handleAddToCart = (product) => {
     if (!product) return;
     setCart((prev) => {
@@ -135,10 +135,7 @@ export default function SalePOS() {
       }
       const unitPrice = Number(product.unitPrice ?? product.price ?? product.mrp ?? 0);
       const taxRate = Number(product.taxRate ?? product.tax ?? 0);
-      return [
-        ...prev,
-        { id: key, name: product.name ?? product.title ?? "Item", qty: 1, unitPrice, taxRate },
-      ];
+      return [...prev, { id: key, name: product.name ?? product.title ?? "Item", qty: 1, unitPrice, taxRate }];
     });
   };
 
@@ -149,28 +146,20 @@ export default function SalePOS() {
   };
 
   // totals
- // totals
-const subtotal = cart.reduce((s, i) => s + Number(i.unitPrice || 0) * Number(i.qty || 0), 0);
+  const subtotal = cart.reduce((s, i) => s + Number(i.unitPrice || 0) * Number(i.qty || 0), 0);
+  const taxTotal = cart.reduce(
+    (s, i) => s + (Number(i.unitPrice || 0) * Number(i.qty || 0) * (Number(i.taxRate || 0) / 100)),
+    0
+  );
+  const discountTotal = (subtotal * Number(discount || 0)) / 100;
+  const total = +(subtotal + taxTotal - discountTotal).toFixed(2);
 
-// Calculate tax total as percentage of each product’s rate
-const taxTotal = cart.reduce(
-  (s, i) => s + (Number(i.unitPrice || 0) * Number(i.qty || 0) * (Number(i.taxRate || 0) / 100)),
-  0
-);
-
-//  Discount entered as percentage (%)
-const discountTotal = (subtotal * Number(discount || 0)) / 100;
-
-// Final total = subtotal + tax - discount
-const total = +(subtotal + taxTotal - discountTotal).toFixed(2);
-
-
+  // validations
   const validateCashierId = () => {
     const v = cashierIdInput === "" ? null : Number(cashierIdInput);
     return Number.isInteger(v) && v > 0;
   };
 
-  // UPI validation & payload
   const validateUpi = (id) => {
     if (!id || String(id).trim().length < 3) return false;
     if (/@/.test(id)) return true;
@@ -178,30 +167,23 @@ const total = +(subtotal + taxTotal - discountTotal).toFixed(2);
     return digits.length >= 10 && digits.length <= 20;
   };
 
-  // Build UPI deep-link payload. Always trim and lower-case VPA for cleanliness.
   const upiPayloadString = useMemo(() => {
     const vpa = String(upiId || "").trim();
     if (!vpa) return "";
-    // Use commonly accepted UPI params. Merchant name 'SmartRetails' used as pn.
     const pa = encodeURIComponent(vpa);
     const pn = encodeURIComponent("SmartRetails");
     const am = encodeURIComponent(String(total.toFixed(2)));
     const cu = "INR";
-    // Note: tn (transaction note) optional
     return `upi://pay?pa=${pa}&pn=${pn}&am=${am}&cu=${cu}`;
   }, [upiId, total]);
 
-  // Use qrserver API for QR image (stable). Encode the full payload.
   const upiQrSrc = useMemo(() => {
     if (!upiPayloadString) return "";
-    // Use qrserver free API: https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=...
     const data = encodeURIComponent(upiPayloadString);
-    // Add cache-buster key when refresh requested
     const cb = upiRefreshKey || 0;
     return `https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=${data}&t=${cb}`;
   }, [upiPayloadString, upiRefreshKey]);
 
-  // Card validation
   const validateCardDetails = () => {
     const num = String(cardNumber).replace(/\s+/g, "");
     if (!luhnCheck(num)) {
@@ -245,7 +227,43 @@ const total = +(subtotal + taxTotal - discountTotal).toFixed(2);
     setCardError("");
   };
 
-  // Finalize sale
+  // scanned-code -> add to cart
+  const handleScannedCode = async (raw) => {
+    if (!raw) return;
+    const code = String(raw).trim();
+    if (!code) return;
+    if (lastScannedRef.current === code) return;
+    lastScannedRef.current = code;
+    clearTimeout(scanCooldownRef.current);
+    try {
+      const resp = await searchProducts({ name: code, sku: code, page: 0, size: 10 });
+      const list = Array.isArray(resp) ? resp : resp?.content ?? resp?.data ?? [];
+      let product = Array.isArray(list) && list.length ? list[0] : null;
+      if (!product) {
+        const found = (fallbackProducts || []).find(
+          (p) => String(p.sku || "").toLowerCase() === code.toLowerCase() || String(p.id || "").toLowerCase() === code.toLowerCase()
+        );
+        product = found || null;
+      }
+      if (product) handleAddToCart(product);
+    } catch (err) {
+      console.error("scan processing error", err);
+    } finally {
+      scanCooldownRef.current = setTimeout(() => {
+        lastScannedRef.current = null;
+      }, 900);
+    }
+  };
+
+  // scanner callbacks
+  const onQrScan = (data) => {
+    if (data) handleScannedCode(data);
+  };
+  const onQrError = (err) => {
+    console.warn("QR reader error:", err);
+  };
+
+  // finalize sale: NOTE -> do NOT include paymentDetails
   const handleFinalizeSale = async () => {
     if (!validateCashierId()) {
       alert("Please enter a valid numeric Cashier ID (positive integer) in the sidebar.");
@@ -255,6 +273,7 @@ const total = +(subtotal + taxTotal - discountTotal).toFixed(2);
       alert("Add at least one product to cart.");
       return;
     }
+    // keep client-side validation but do not send sensitive details
     if (paymentMode === "UPI") {
       if (!validateUpi(upiId)) {
         setUpiError("Invalid UPI ID. Example: username@bank or 10-20 digits.");
@@ -273,6 +292,7 @@ const total = +(subtotal + taxTotal - discountTotal).toFixed(2);
       taxRate: Number(c.taxRate || 0),
     }));
 
+    // *** Payment details intentionally omitted for privacy/security ***
     const payload = {
       cashierId: Number(cashierIdInput),
       total: Number(total.toFixed(2)),
@@ -281,12 +301,7 @@ const total = +(subtotal + taxTotal - discountTotal).toFixed(2);
       paymentMode: String(paymentMode).toUpperCase(),
       createdAt: new Date().toISOString(),
       items: itemsPayload,
-      paymentDetails:
-        paymentMode === "UPI"
-          ? { upiId }
-          : paymentMode === "CARD"
-          ? { cardMasked: maskCard(cardNumber), cardHolder, expiry: cardExpiry }
-          : undefined,
+      // paymentDetails: <REMOVED>
     };
 
     try {
@@ -305,7 +320,9 @@ const total = +(subtotal + taxTotal - discountTotal).toFixed(2);
   };
 
   const handleLogout = () => {
-    try { AuthService.logout(); } catch {}
+    try {
+      AuthService.logout();
+    } catch {}
     navigate("/login");
   };
 
@@ -332,13 +349,42 @@ const total = +(subtotal + taxTotal - discountTotal).toFixed(2);
         </div>
 
         <ul className="sidebar-nav">
-          <li onClick={() => navigate("/products")} className="nav-item">📦 Products</li>
-          <li onClick={() => navigate("/pos")} className={`nav-item ${window.location.pathname === "/pos" ? "active" : ""}`}>🧾 Billing / POS</li>
+          <li onClick={() => navigate("/products")} className="nav-item">
+            📦 Products
+          </li>
+          <li onClick={() => navigate("/pos")} className={`nav-item ${window.location.pathname === "/pos" ? "active" : ""}`}>
+            🧾 Billing / POS
+          </li>
         </ul>
 
         <button className="logout-btn" onClick={handleLogout}>
           <LogOut size={14} /> Logout
         </button>
+
+        {/* QR controls */}
+        <div style={{ marginTop: 12 }}>
+          <button onClick={() => setCameraEnabled((s) => !s)} className="btn" style={{ display: "block", width: "100%" }}>
+            {cameraEnabled ? "Disable Camera Scanner" : "Enable Camera Scanner"}
+          </button>
+
+          {cameraEnabled && (
+            <div style={{ marginTop: 8 }}>
+              <small className="muted">Point the camera at a barcode/QR to auto-add product.</small>
+              <div style={{ marginTop: 8 }}>
+                <Scanner
+                  onResult={(text) => {
+                    if (text) onQrScan(text);
+                  }}
+                  onError={(err) => {
+                    onQrError?.(err);
+                  }}
+                  components={{ finder: false }}
+                  style={{ width: "100%" }}
+                />
+              </div>
+            </div>
+          )}
+        </div>
       </aside>
 
       {/* Main Content */}
@@ -348,7 +394,7 @@ const total = +(subtotal + taxTotal - discountTotal).toFixed(2);
         </div>
 
         <div className="pos-content">
-          {/* Product Search Section */}
+          {/* Product Search */}
           <div className="product-section">
             <div className="search-bar pos-search">
               <input
@@ -366,7 +412,6 @@ const total = +(subtotal + taxTotal - discountTotal).toFixed(2);
 
             {searchError && <div className="search-error">{searchError}</div>}
 
-            {/* Product grid (styled rows/cards) */}
             <div className="product-list grid">
               {products.length === 0 ? (
                 <div className="no-products">No products. Search to load matches.</div>
@@ -387,7 +432,7 @@ const total = +(subtotal + taxTotal - discountTotal).toFixed(2);
             </div>
           </div>
 
-          {/* Cart Section */}
+          {/* Cart */}
           <div className="cart-section">
             <div className="cart-header">
               <ShoppingCart size={18} />
@@ -410,25 +455,17 @@ const total = +(subtotal + taxTotal - discountTotal).toFixed(2);
                   <tr key={item.id}>
                     <td>{item.name}</td>
                     <td>
-                      <input
-                        type="number"
-                        value={item.qty}
-                        min="1"
-                        onChange={(e) => handleQtyChange(item.id, e.target.value)}
-                      />
+                      <input type="number" value={item.qty} min="1" onChange={(e) => handleQtyChange(item.id, e.target.value)} />
                     </td>
                     <td>₹{Number(item.unitPrice || 0).toFixed(2)}</td>
                     <td>{Number(item.taxRate || 0).toFixed(2)}%</td>
                     <td>
-                      ₹{(
-                        Number(item.unitPrice || 0) * Number(item.qty || 0) +
+                      ₹{(Number(item.unitPrice || 0) * Number(item.qty || 0) +
                         (Number(item.unitPrice || 0) * Number(item.qty || 0) * (Number(item.taxRate || 0) / 100))
                       ).toFixed(2)}
                     </td>
                     <td>
-                      <button className="remove-btn" onClick={() => handleRemove(item.id)}>
-                        <Trash2 size={16} />
-                      </button>
+                      <button className="remove-btn" onClick={() => handleRemove(item.id)}><Trash2 size={16} /></button>
                     </td>
                   </tr>
                 ))}
@@ -440,24 +477,18 @@ const total = +(subtotal + taxTotal - discountTotal).toFixed(2);
               </tbody>
             </table>
 
-           <div className="cart-summary">
-            <p>Subtotal: ₹{subtotal.toFixed(2)}</p>
-            <p>Tax Total: ₹{taxTotal.toFixed(2)}</p>
-            <p>Discount ({discount}%): -₹{discountTotal.toFixed(2)}</p>
-            <h3>Total: ₹{total.toFixed(2)}</h3>
-          </div>
-
+            <div className="cart-summary">
+              <p>Subtotal: ₹{subtotal.toFixed(2)}</p>
+              <p>Tax Total: ₹{taxTotal.toFixed(2)}</p>
+              <p>Discount ({discount}%): -₹{discountTotal.toFixed(2)}</p>
+              <h3>Total: ₹{total.toFixed(2)}</h3>
+            </div>
 
             {/* Payment controls */}
-            <div className="discount-payment">
+            <div className="discount-payment" style={{ display: "flex", gap: 12, alignItems: "flex-end", marginTop: 12 }}>
               <div className="discount-block">
                 <label>Discount (%)</label>
-                <input
-                  type="number"
-                  placeholder="Enter discount "
-                  value={discount}
-                  onChange={(e) => setDiscount(Number(e.target.value || 0))}
-                />
+                <input type="number" placeholder="Enter discount " value={discount} onChange={(e) => setDiscount(Number(e.target.value || 0))} />
               </div>
 
               <div>
@@ -472,71 +503,33 @@ const total = +(subtotal + taxTotal - discountTotal).toFixed(2);
 
             {/* UPI */}
             {paymentMode === "UPI" && (
-              <div className="payment-card">
+              <div className="payment-card" style={{ marginTop: 12 }}>
                 <div className="payment-card-head"><QrCode size={16} /> <strong>UPI Payment</strong></div>
 
                 <div className="form-row">
                   <label>UPI ID (VPA)</label>
-                  <input
-                    type="text"
-                    placeholder="example@bank"
-                    value={upiId}
-                    onChange={(e) => { setUpiId(e.target.value); setUpiError(""); }}
-                  />
+                  <input type="text" placeholder="example@bank" value={upiId} onChange={(e) => { setUpiId(e.target.value); setUpiError(""); }} />
                   {upiError && <div className="field-error">{upiError}</div>}
                 </div>
 
-                <div className="upi-qr">
+                <div className="upi-qr" style={{ display: "flex", gap: 16, alignItems: "center", marginTop: 8 }}>
                   <div>
                     <div className="muted">Scan to pay</div>
                     <div className="big-amount">₹{total.toFixed(2)}</div>
                   </div>
 
                   <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 8 }}>
-                    {!upiPayloadString && (
-                      <div className="muted">Enter a valid UPI ID to generate QR</div>
-                    )}
-                    {upiPayloadString && !validateUpi(upiId) && (
-                      <div className="field-error">Invalid UPI ID format — example@bank</div>
-                    )}
+                    {!upiPayloadString && <div className="muted">Enter a valid UPI ID to generate QR</div>}
+                    {upiPayloadString && !validateUpi(upiId) && <div className="field-error">Invalid UPI ID format — example@bank</div>}
                     {upiPayloadString && validateUpi(upiId) && (
                       <>
-                        <img
-                          alt="UPI QR"
-                          src={upiQrSrc}
-                          className="qr-image"
-                          onError={() => {
-                            // fallback: if qrserver fails, try google charts
-                            const fallback = `https://chart.googleapis.com/chart?chs=200x200&cht=qr&chl=${encodeURIComponent(upiPayloadString)}`;
-                            // set image src directly
-                            // find this image by className, but easiest is to set a local key to force re-render
-                            // we'll just set state by bumping refresh key
-                            setUpiRefreshKey((k) => k + 1);
-                            console.warn("QR image failed to load, attempted refresh.");
-                          }}
-                        />
+                        <img alt="UPI QR" src={upiQrSrc} className="qr-image" onError={() => setUpiRefreshKey((k) => k + 1)} />
                         <div style={{ display: "flex", gap: 8, marginTop: 6 }}>
-                          <button
-                            className="btn btn-ghost"
-                            onClick={() => {
-                              navigator.clipboard?.writeText(upiPayloadString)?.then(() => {
-                                alert("UPI link copied to clipboard");
-                              }).catch(() => {
-                                // fallback select trick
-                                alert("Copy failed — please copy manually: " + upiPayloadString);
-                              });
-                            }}
-                          >
+                          <button className="btn btn-ghost" onClick={() => { navigator.clipboard?.writeText(upiPayloadString)?.then(() => alert("UPI link copied"))?.catch(() => alert("Copy failed")); }}>
                             Copy link
                           </button>
                           <a className="btn btn-primary" href={upiPayloadString} target="_blank" rel="noreferrer">Open</a>
-                          <button
-                            className="btn"
-                            onClick={() => setUpiRefreshKey((k) => k + 1)}
-                            title="Refresh QR"
-                          >
-                            Refresh
-                          </button>
+                          <button className="btn" onClick={() => setUpiRefreshKey((k) => k + 1)} title="Refresh QR">Refresh</button>
                         </div>
                       </>
                     )}
@@ -547,7 +540,7 @@ const total = +(subtotal + taxTotal - discountTotal).toFixed(2);
 
             {/* Card */}
             {paymentMode === "CARD" && (
-              <div className="payment-card">
+              <div className="payment-card" style={{ marginTop: 12 }}>
                 <div className="payment-card-head"><CreditCard size={16} /> <strong>Card Payment</strong></div>
 
                 <div className="form-row">
@@ -555,7 +548,7 @@ const total = +(subtotal + taxTotal - discountTotal).toFixed(2);
                   <input type="text" placeholder="XXXX XXXX XXXX 1234" value={cardNumber} onChange={(e) => setCardNumber(e.target.value)} />
                 </div>
 
-                <div style={{ display: "flex", gap: 8 }}>
+                <div style={{ display: "flex", gap: 8, marginTop: 8 }}>
                   <div style={{ flex: 1 }}>
                     <label>Card Holder</label>
                     <input type="text" placeholder="Name on card" value={cardHolder} onChange={(e) => setCardHolder(e.target.value)} />
@@ -568,7 +561,7 @@ const total = +(subtotal + taxTotal - discountTotal).toFixed(2);
 
                 {cardError && <div className="field-error">{cardError}</div>}
 
-                <div className="card-preview">
+                <div className="card-preview" style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: 12 }}>
                   <div className="card-preview-block">
                     <div className="card-preview-name">{cardHolder || "Card Holder"}</div>
                     <div className="card-preview-num">{maskCard(cardNumber) || "XXXX XXXX XXXX XXXX"}</div>
@@ -579,7 +572,7 @@ const total = +(subtotal + taxTotal - discountTotal).toFixed(2);
               </div>
             )}
 
-            <div className="cart-actions">
+            <div className="cart-actions" style={{ marginTop: 16 }}>
               <button className="cancel-btn" onClick={handleCancel} disabled={loadingFinalize}>Cancel</button>
               <button className="finalize-btn" onClick={handleFinalizeSale} disabled={loadingFinalize}>
                 {loadingFinalize ? "Processing…" : "Finalize Sale"}
