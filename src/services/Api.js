@@ -2,12 +2,12 @@
 import axios from "axios";
 import Cookies from "js-cookie";
 
-export const API_BASE = "https://d1x2sux8i7gb9h.cloudfront.net/api"; 
+// 👇 Remove this line completely (not needed)
+// export const API_BASE = "https://d1x2sux8i7gb9h.cloudfront.net/api";
 
 const api = axios.create({
-  baseURL:
-    process.env.REACT_APP_API_BASE_URL ||
-    "http://localhost:8080",
+  // ✅ This now directly points to your Railway backend
+  baseURL: process.env.REACT_APP_API_BASE_URL || "http://localhost:8080",
   headers: { "Content-Type": "application/json" },
 });
 

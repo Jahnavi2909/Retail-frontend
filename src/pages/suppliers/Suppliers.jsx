@@ -1,13 +1,10 @@
 // src/pages/suppliers/Suppliers.jsx
 import React, { useEffect, useMemo, useState } from "react";
 import "../../styles/Suppliers.css";
-import { NavLink } from "react-router-dom";
-import axios from "axios";
-import Cookies from "js-cookie";
 import Sidebar from "../../components/Sidebar";
-import { API_BASE } from "../../services/Api";
+import api from "../../services/Api"; // ✅ Use central API instance (axios preconfigured)
 
-const PAGE_SIZE = 6; // <- 6 rows per page
+const PAGE_SIZE = 6; // 6 rows per page
 
 const Suppliers = () => {
   const [suppliers, setSuppliers] = useState([]);
@@ -23,27 +20,24 @@ const Suppliers = () => {
   });
   const [toast, setToast] = useState(null);
 
-  // search + pagination
   const [searchTerm, setSearchTerm] = useState("");
   const [page, setPage] = useState(0);
 
-  // Tailwind Toast
+  // ✅ Simple toast utility
   const showToast = (message, type = "success") => {
     setToast({ message, type });
     setTimeout(() => setToast(null), 3000);
   };
 
-  // Load suppliers on mount
+  // ✅ Load suppliers on mount
   useEffect(() => {
     fetchSuppliers();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // ✅ Fetch suppliers from backend
   const fetchSuppliers = async () => {
     try {
-      const res = await axios.get(`${API_BASE}/suppliers`, {
-        headers: { Authorization: `Bearer ${Cookies.get("sr_token")}` },
-      });
+      const res = await api.get("/suppliers");
       const list = Array.isArray(res.data?.data) ? res.data.data : [];
       setSuppliers(list);
       setPage(0);
@@ -53,13 +47,16 @@ const Suppliers = () => {
     }
   };
 
-  // Handle form change
+  // ✅ Form input handler
   const handleChange = (e) => {
     const { name, value, type, checked } = e.target;
-    setFormData((prev) => ({ ...prev, [name]: type === "checkbox" ? checked : value }));
+    setFormData((prev) => ({
+      ...prev,
+      [name]: type === "checkbox" ? checked : value,
+    }));
   };
 
-  // Add or Update Supplier
+  // ✅ Add or Update Supplier
   const handleAddOrUpdateSupplier = async (e) => {
     e.preventDefault();
 
@@ -79,22 +76,14 @@ const Suppliers = () => {
 
     try {
       if (editingSupplier) {
-        const res = await axios.put(`${API_BASE}/suppliers/${editingSupplier.id}`, payload, {
-          headers: {
-            "Content-Type": "application/json",
-            Authorization: `Bearer ${Cookies.get("sr_token")}`,
-          },
-        });
+        const res = await api.put(`/suppliers/${editingSupplier.id}`, payload);
         const updated = res.data?.data || res.data;
-        setSuppliers((prev) => prev.map((s) => (s.id === updated.id ? updated : s)));
+        setSuppliers((prev) =>
+          prev.map((s) => (s.id === updated.id ? updated : s))
+        );
         showToast("Supplier updated successfully!", "success");
       } else {
-        const res = await axios.post(`${API_BASE}/suppliers`, payload, {
-          headers: {
-            "Content-Type": "application/json",
-            Authorization: `Bearer ${Cookies.get("sr_token")}`,
-          },
-        });
+        const res = await api.post("/suppliers", payload);
         const created = res.data?.data || res.data;
         setSuppliers((prev) => [...prev, created]);
         showToast("Supplier added successfully!", "success");
@@ -103,12 +92,15 @@ const Suppliers = () => {
       handleCancel();
     } catch (err) {
       console.error("Error saving supplier:", err);
-      const msg = err.response?.data?.data ?? err.response?.data?.message ?? "Failed to save supplier.";
+      const msg =
+        err.response?.data?.data ??
+        err.response?.data?.message ??
+        "Failed to save supplier.";
       showToast(msg, "error");
     }
   };
 
-  // Edit supplier
+  // ✅ Edit supplier
   const handleEdit = (supplier) => {
     setEditingSupplier(supplier);
     setFormData({
@@ -122,19 +114,17 @@ const Suppliers = () => {
     setShowForm(true);
   };
 
-  // Delete supplier
+  // ✅ Delete supplier
   const handleDelete = async (supplierId) => {
-    if (!window.confirm("Are you sure you want to delete this supplier?")) return;
+    if (!window.confirm("Are you sure you want to delete this supplier?"))
+      return;
 
     try {
-      await axios.delete(`${API_BASE}/suppliers/${supplierId}`, {
-        headers: { Authorization: `Bearer ${Cookies.get("sr_token")}` },
-      });
-
+      await api.delete(`/suppliers/${supplierId}`);
       setSuppliers((prev) => prev.filter((s) => s.id !== supplierId));
       showToast("Supplier deleted successfully!", "success");
 
-      // adjust page if needed
+      // adjust pagination if needed
       setTimeout(() => {
         const totalAfter = filteredSuppliers.length - 1;
         const totalPagesAfter = Math.max(1, Math.ceil(totalAfter / PAGE_SIZE));
@@ -146,7 +136,7 @@ const Suppliers = () => {
     }
   };
 
-  // Cancel form
+  // ✅ Reset form
   const handleCancel = () => {
     setShowForm(false);
     setEditingSupplier(null);
@@ -160,7 +150,7 @@ const Suppliers = () => {
     });
   };
 
-  // filter suppliers using searchTerm
+  // ✅ Search filter
   const filteredSuppliers = useMemo(() => {
     const q = (searchTerm || "").trim().toLowerCase();
     if (!q) return suppliers;
@@ -172,10 +162,10 @@ const Suppliers = () => {
     );
   }, [suppliers, searchTerm]);
 
-  // pagination logic
+  // ✅ Pagination logic
   const total = filteredSuppliers.length;
   const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
-  const safePage = Math.min(Math.max(0, page), Math.max(0, totalPages - 1));
+  const safePage = Math.min(Math.max(0, page), totalPages - 1);
   const startIdx = safePage * PAGE_SIZE;
   const endIdx = Math.min(startIdx + PAGE_SIZE, total);
   const pageItems = filteredSuppliers.slice(startIdx, endIdx);
@@ -201,15 +191,22 @@ const Suppliers = () => {
     <div className="suppliers-page">
       <Sidebar />
 
-      {/* Main content */}
       <div className="main-content">
         <header className="navbar">
           <h1>Suppliers</h1>
-          <button className="add-btn" onClick={() => setShowForm(true)}>➕ Add Supplier</button>
+          <button className="add-btn" onClick={() => setShowForm(true)}>
+            ➕ Add Supplier
+          </button>
         </header>
 
-        {/* Search input */}
-        <div style={{ marginBottom: 12, display: "flex", gap: 8, alignItems: "center" }}>
+        <div
+          style={{
+            marginBottom: 12,
+            display: "flex",
+            gap: 8,
+            alignItems: "center",
+          }}
+        >
           <input
             type="text"
             placeholder="Search suppliers..."
@@ -217,13 +214,13 @@ const Suppliers = () => {
             value={searchTerm}
             onChange={(e) => {
               setSearchTerm(e.target.value);
-              setPage(0); // reset page on search
+              setPage(0);
             }}
             style={{ flex: 1 }}
           />
         </div>
 
-        {/* Supplier Table */}
+        {/* ✅ Supplier Table */}
         <section className="supplier-table">
           <table>
             <thead>
@@ -256,8 +253,18 @@ const Suppliers = () => {
                     <td>{supplier.address || "-"}</td>
                     <td>{supplier.isActive ? "Yes" : "No"}</td>
                     <td>
-                      <button className="edit-btn" onClick={() => handleEdit(supplier)}>✏ Edit</button>
-                      <button className="delete-btn" onClick={() => handleDelete(supplier.id)}>🗑 Delete</button>
+                      <button
+                        className="edit-btn"
+                        onClick={() => handleEdit(supplier)}
+                      >
+                        ✏ Edit
+                      </button>
+                      <button
+                        className="delete-btn"
+                        onClick={() => handleDelete(supplier.id)}
+                      >
+                        🗑 Delete
+                      </button>
                     </td>
                   </tr>
                 ))
@@ -266,13 +273,28 @@ const Suppliers = () => {
           </table>
         </section>
 
-        {/* Pagination controls */}
+        {/* ✅ Pagination */}
         {total > PAGE_SIZE && (
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: 12 }}>
-            <div className="results">Showing {total === 0 ? 0 : startIdx + 1} to {endIdx} of {total} results</div>
+          <div
+            style={{
+              display: "flex",
+              justifyContent: "space-between",
+              alignItems: "center",
+              marginTop: 12,
+            }}
+          >
+            <div className="results">
+              Showing {total === 0 ? 0 : startIdx + 1} to {endIdx} of {total} results
+            </div>
 
             <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-              <button onClick={handlePrev} disabled={safePage === 0} className="btn">Prev</button>
+              <button
+                onClick={handlePrev}
+                disabled={safePage === 0}
+                className="btn"
+              >
+                Prev
+              </button>
 
               <div style={{ display: "flex", gap: 6 }}>
                 {pageButtons.map((p) => (
@@ -294,39 +316,96 @@ const Suppliers = () => {
                 ))}
               </div>
 
-              <button onClick={handleNext} disabled={safePage >= totalPages - 1} className="btn">Next</button>
+              <button
+                onClick={handleNext}
+                disabled={safePage >= totalPages - 1}
+                className="btn"
+              >
+                Next
+              </button>
             </div>
           </div>
         )}
 
-        {/* Modal Form */}
+        {/* ✅ Supplier Modal Form */}
         {showForm && (
           <div className="modal-overlay">
             <div className="modal-content">
               <h3>{editingSupplier ? "Edit Supplier" : "Add New Supplier"}</h3>
               <form onSubmit={handleAddOrUpdateSupplier}>
-                <input type="text" name="name" placeholder="Name" value={formData.name} onChange={handleChange} required />
-                <input type="email" name="email" placeholder="Email" value={formData.email} onChange={handleChange} required />
-                <input type="text" name="phone" placeholder="Phone" value={formData.phone} onChange={handleChange} />
-                <input type="text" name="contactPerson" placeholder="Contact Person" value={formData.contactPerson} onChange={handleChange} />
-                <input type="text" name="address" placeholder="Address" value={formData.address} onChange={handleChange} />
-                <label style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                  <input type="checkbox" name="isActive" checked={formData.isActive} onChange={handleChange} />
+                <input
+                  type="text"
+                  name="name"
+                  placeholder="Name"
+                  value={formData.name}
+                  onChange={handleChange}
+                  required
+                />
+                <input
+                  type="email"
+                  name="email"
+                  placeholder="Email"
+                  value={formData.email}
+                  onChange={handleChange}
+                  required
+                />
+                <input
+                  type="text"
+                  name="phone"
+                  placeholder="Phone"
+                  value={formData.phone}
+                  onChange={handleChange}
+                />
+                <input
+                  type="text"
+                  name="contactPerson"
+                  placeholder="Contact Person"
+                  value={formData.contactPerson}
+                  onChange={handleChange}
+                />
+                <input
+                  type="text"
+                  name="address"
+                  placeholder="Address"
+                  value={formData.address}
+                  onChange={handleChange}
+                />
+                <label
+                  style={{ display: "flex", alignItems: "center", gap: 8 }}
+                >
+                  <input
+                    type="checkbox"
+                    name="isActive"
+                    checked={formData.isActive}
+                    onChange={handleChange}
+                  />
                   Active
                 </label>
 
                 <div className="form-actions">
-                  <button type="submit" className="save-btn">{editingSupplier ? "Update" : "Save"}</button>
-                  <button type="button" className="cancel-btn" onClick={handleCancel}>Cancel</button>
+                  <button type="submit" className="save-btn">
+                    {editingSupplier ? "Update" : "Save"}
+                  </button>
+                  <button
+                    type="button"
+                    className="cancel-btn"
+                    onClick={handleCancel}
+                  >
+                    Cancel
+                  </button>
                 </div>
               </form>
             </div>
           </div>
         )}
 
-        {/* Tailwind Toast */}
+        {/* ✅ Toast Notification */}
         {toast && (
-          <div className={`fixed bottom-6 right-6 px-4 py-2 rounded text-white shadow-md transition-all ${toast.type === "error" ? "bg-red-600" : "bg-green-600"}`}>
+          <div
+            className={`fixed bottom-6 right-6 px-4 py-2 rounded text-white shadow-md transition-all ${
+              toast.type === "error" ? "bg-red-600" : "bg-green-600"
+            }`}
+          >
             {toast.message}
           </div>
         )}

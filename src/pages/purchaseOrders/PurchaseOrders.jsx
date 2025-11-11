@@ -1,13 +1,11 @@
 // src/pages/purchase/PurchaseOrders.jsx
 import React, { useEffect, useMemo, useState } from "react";
 import "../../styles/PurchaseOrders.css";
-import { NavLink } from "react-router-dom";
-import axios from "axios";
 import Cookies from "js-cookie";
 import Sidebar from "../../components/Sidebar";
-import { API_BASE } from "../../services/Api";
+import api from "../../services/Api"; // ✅ using centralized API instance
 
-const PAGE_SIZE = 6; // <- 6 rows per page
+const PAGE_SIZE = 6; // 6 rows per page
 
 const PurchaseOrders = () => {
   const [orders, setOrders] = useState([]);
@@ -15,7 +13,7 @@ const PurchaseOrders = () => {
   const [editingOrder, setEditingOrder] = useState(null);
   const [toast, setToast] = useState(null);
   const [searchTerm, setSearchTerm] = useState("");
-  const [suppliers, setSuppliers] = useState([]); // For dropdown
+  const [suppliers, setSuppliers] = useState([]);
 
   const [newOrder, setNewOrder] = useState({
     orderNumber: "",
@@ -25,27 +23,23 @@ const PurchaseOrders = () => {
     status: "Pending",
   });
 
-  // pagination
   const [page, setPage] = useState(0);
 
-  // Tailwind Toast
+  // Toast Notification
   const showToast = (message, type = "success") => {
     setToast({ message, type });
     setTimeout(() => setToast(null), 3000);
   };
 
-  // Fetch suppliers + purchase orders
   useEffect(() => {
     fetchSuppliers();
     fetchOrders();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // ✅ fetch suppliers using `api`
   const fetchSuppliers = async () => {
     try {
-      const res = await axios.get(`${API_BASE}/suppliers`, {
-        headers: { Authorization: `Bearer ${Cookies.get("sr_token")}` },
-      });
+      const res = await api.get("/suppliers");
       const list = Array.isArray(res.data?.data) ? res.data.data : [];
       setSuppliers(list);
     } catch (err) {
@@ -54,11 +48,10 @@ const PurchaseOrders = () => {
     }
   };
 
+  // ✅ fetch purchase orders using `api`
   const fetchOrders = async () => {
     try {
-      const res = await axios.get(`${API_BASE}/purchase-orders`, {
-        headers: { Authorization: `Bearer ${Cookies.get("sr_token")}` },
-      });
+      const res = await api.get("/purchase-orders");
       const list = Array.isArray(res.data?.data) ? res.data.data : [];
       setOrders(list);
       setPage(0);
@@ -68,13 +61,13 @@ const PurchaseOrders = () => {
     }
   };
 
-  // Handle input change
+  // handle input change
   const handleChange = (e) => {
     const { name, value } = e.target;
     setNewOrder((prev) => ({ ...prev, [name]: value }));
   };
 
-  // Add or Update order
+  // ✅ Add or Update purchase order
   const handleAddOrUpdateOrder = async (e) => {
     e.preventDefault();
 
@@ -93,22 +86,12 @@ const PurchaseOrders = () => {
 
     try {
       if (editingOrder) {
-        const res = await axios.put(`${API_BASE}/purchase-orders/${editingOrder.id}`, payload, {
-          headers: {
-            "Content-Type": "application/json",
-            Authorization: `Bearer ${Cookies.get("sr_token")}`,
-          },
-        });
+        const res = await api.put(`/purchase-orders/${editingOrder.id}`, payload);
         const updated = res.data?.data || res.data;
         setOrders((prev) => prev.map((o) => (o.id === updated.id ? updated : o)));
         showToast("Order updated successfully!", "success");
       } else {
-        const res = await axios.post(`${API_BASE}/purchase-orders`, payload, {
-          headers: {
-            "Content-Type": "application/json",
-            Authorization: `Bearer ${Cookies.get("sr_token")}`,
-          },
-        });
+        const res = await api.post("/purchase-orders", payload);
         const created = res.data?.data || res.data;
         setOrders((prev) => [...prev, created]);
         showToast("Order added successfully!", "success");
@@ -117,22 +100,23 @@ const PurchaseOrders = () => {
       handleCancel();
     } catch (err) {
       console.error("Error saving order:", err);
-      const msg = err.response?.data?.data ?? err.response?.data?.message ?? "Failed to save order.";
+      const msg =
+        err.response?.data?.data ??
+        err.response?.data?.message ??
+        "Failed to save order.";
       showToast(msg, "error");
     }
   };
 
-  // Delete order
+  // ✅ Delete order
   const handleDelete = async (orderId) => {
     if (!window.confirm("Are you sure you want to delete this order?")) return;
 
     try {
-      await axios.delete(`${API_BASE}/purchase-orders/${orderId}`, {
-        headers: { Authorization: `Bearer ${Cookies.get("sr_token")}` },
-      });
+      await api.delete(`/purchase-orders/${orderId}`);
       setOrders((prev) => prev.filter((o) => o.id !== orderId));
       showToast("Order deleted successfully!", "success");
-      // adjust page if current page becomes empty
+
       setTimeout(() => {
         const totalAfter = filteredOrders.length - 1;
         const totalPagesAfter = Math.max(1, Math.ceil(totalAfter / PAGE_SIZE));
@@ -144,7 +128,6 @@ const PurchaseOrders = () => {
     }
   };
 
-  // Edit order
   const handleEdit = (order) => {
     setEditingOrder(order);
     setNewOrder({
@@ -157,7 +140,6 @@ const PurchaseOrders = () => {
     setShowForm(true);
   };
 
-  // Cancel form
   const handleCancel = () => {
     setShowForm(false);
     setEditingOrder(null);
@@ -170,7 +152,7 @@ const PurchaseOrders = () => {
     });
   };
 
-  // Filter orders by searchTerm (server shape assumed, defensive)
+  // ✅ filter + pagination logic unchanged
   const filteredOrders = useMemo(() => {
     const q = searchTerm.trim().toLowerCase();
     if (!q) return orders;
@@ -182,10 +164,9 @@ const PurchaseOrders = () => {
     );
   }, [orders, searchTerm]);
 
-  // Pagination for filteredOrders
   const total = filteredOrders.length;
   const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
-  const safePage = Math.min(Math.max(0, page), Math.max(0, totalPages - 1));
+  const safePage = Math.min(Math.max(0, page), totalPages - 1);
   const startIdx = safePage * PAGE_SIZE;
   const endIdx = Math.min(startIdx + PAGE_SIZE, total);
   const pageItems = filteredOrders.slice(startIdx, endIdx);
@@ -194,7 +175,6 @@ const PurchaseOrders = () => {
   const handleNext = () => setPage((p) => Math.min(totalPages - 1, p + 1));
   const goToPage = (p) => setPage(Math.min(Math.max(0, p), totalPages - 1));
 
-  // page buttons limited range
   const pageButtons = useMemo(() => {
     const buttons = [];
     if (totalPages <= 7) {
@@ -212,7 +192,6 @@ const PurchaseOrders = () => {
     <div className="purchase-page">
       <Sidebar />
 
-      {/* Main Content */}
       <div className="main-content">
         <div className="header">
           <h1>Purchase Orders</h1>
@@ -221,7 +200,6 @@ const PurchaseOrders = () => {
           </button>
         </div>
 
-        {/* Search */}
         <input
           type="text"
           placeholder="Search Purchase Orders"
@@ -229,11 +207,10 @@ const PurchaseOrders = () => {
           value={searchTerm}
           onChange={(e) => {
             setSearchTerm(e.target.value);
-            setPage(0); // reset to first page on search
+            setPage(0);
           }}
         />
 
-        {/* Orders Table */}
         <table className="orders-table">
           <thead>
             <tr>
@@ -253,20 +230,31 @@ const PurchaseOrders = () => {
                   <td>{startIdx + index + 1}</td>
                   <td>{order.orderNumber}</td>
                   <td>
-                    {suppliers.find((s) => s.id === order.supplierId)?.name || order.supplierId}
+                    {suppliers.find((s) => s.id === order.supplierId)?.name ||
+                      order.supplierId}
                   </td>
                   <td>{order.expectedDate}</td>
                   <td>{order.notes}</td>
                   <td>
-                    <span className={`status-badge ${order.status?.toLowerCase().replace(" ", "-")}`}>
+                    <span
+                      className={`status-badge ${order.status
+                        ?.toLowerCase()
+                        .replace(" ", "-")}`}
+                    >
                       {order.status}
                     </span>
                   </td>
                   <td>
-                    <button className="edit-btn" onClick={() => handleEdit(order)}>
+                    <button
+                      className="edit-btn"
+                      onClick={() => handleEdit(order)}
+                    >
                       ✏️ Edit
                     </button>
-                    <button className="delete-btn" onClick={() => handleDelete(order.id)}>
+                    <button
+                      className="delete-btn"
+                      onClick={() => handleDelete(order.id)}
+                    >
                       🗑 Delete
                     </button>
                   </td>
@@ -282,13 +270,23 @@ const PurchaseOrders = () => {
           </tbody>
         </table>
 
-        {/* Pagination controls */}
         {total > PAGE_SIZE && (
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: 12 }}>
-            <div className="results">Showing {total === 0 ? 0 : startIdx + 1} to {endIdx} of {total} results</div>
+          <div
+            style={{
+              display: "flex",
+              justifyContent: "space-between",
+              alignItems: "center",
+              marginTop: 12,
+            }}
+          >
+            <div className="results">
+              Showing {total === 0 ? 0 : startIdx + 1} to {endIdx} of {total} results
+            </div>
 
             <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-              <button onClick={handlePrev} disabled={safePage === 0} className="btn">Prev</button>
+              <button onClick={handlePrev} disabled={safePage === 0} className="btn">
+                Prev
+              </button>
 
               <div style={{ display: "flex", gap: 6 }}>
                 {pageButtons.map((p) => (
@@ -310,7 +308,13 @@ const PurchaseOrders = () => {
                 ))}
               </div>
 
-              <button onClick={handleNext} disabled={safePage >= totalPages - 1} className="btn">Next</button>
+              <button
+                onClick={handleNext}
+                disabled={safePage >= totalPages - 1}
+                className="btn"
+              >
+                Next
+              </button>
             </div>
           </div>
         )}
@@ -322,9 +326,21 @@ const PurchaseOrders = () => {
           <div className="modal-content">
             <h3>{editingOrder ? "Edit Purchase Order" : "New Purchase Order"}</h3>
             <form onSubmit={handleAddOrUpdateOrder}>
-              <input type="text" name="orderNumber" placeholder="PO Number" value={newOrder.orderNumber} onChange={handleChange} required />
+              <input
+                type="text"
+                name="orderNumber"
+                placeholder="PO Number"
+                value={newOrder.orderNumber}
+                onChange={handleChange}
+                required
+              />
 
-              <select name="supplierId" value={newOrder.supplierId} onChange={handleChange} required>
+              <select
+                name="supplierId"
+                value={newOrder.supplierId}
+                onChange={handleChange}
+                required
+              >
                 <option value="">Select Supplier</option>
                 {suppliers.map((s) => (
                   <option key={s.id} value={s.id}>
@@ -333,9 +349,25 @@ const PurchaseOrders = () => {
                 ))}
               </select>
 
-              <input type="date" name="expectedDate" value={newOrder.expectedDate} onChange={handleChange} required />
-              <input type="text" name="notes" placeholder="Notes" value={newOrder.notes} onChange={handleChange} />
-              <select name="status" value={newOrder.status} onChange={handleChange}>
+              <input
+                type="date"
+                name="expectedDate"
+                value={newOrder.expectedDate}
+                onChange={handleChange}
+                required
+              />
+              <input
+                type="text"
+                name="notes"
+                placeholder="Notes"
+                value={newOrder.notes}
+                onChange={handleChange}
+              />
+              <select
+                name="status"
+                value={newOrder.status}
+                onChange={handleChange}
+              >
                 <option value="Pending">Pending</option>
                 <option value="Approved">Approved</option>
                 <option value="Received">Received</option>
@@ -343,17 +375,24 @@ const PurchaseOrders = () => {
               </select>
 
               <div className="form-actions">
-                <button type="submit" className="save-btn">{editingOrder ? "Update" : "Save"}</button>
-                <button type="button" className="cancel-btn" onClick={handleCancel}>Cancel</button>
+                <button type="submit" className="save-btn">
+                  {editingOrder ? "Update" : "Save"}
+                </button>
+                <button type="button" className="cancel-btn" onClick={handleCancel}>
+                  Cancel
+                </button>
               </div>
             </form>
           </div>
         </div>
       )}
 
-      {/* Toast Notification */}
       {toast && (
-        <div className={`fixed bottom-6 right-6 px-4 py-2 rounded text-white shadow-md transition-all ${toast.type === "error" ? "bg-red-600" : "bg-green-600"}`}>
+        <div
+          className={`fixed bottom-6 right-6 px-4 py-2 rounded text-white shadow-md transition-all ${
+            toast.type === "error" ? "bg-red-600" : "bg-green-600"
+          }`}
+        >
           {toast.message}
         </div>
       )}
