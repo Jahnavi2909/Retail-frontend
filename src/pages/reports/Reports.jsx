@@ -122,7 +122,7 @@ export default function Reports() {
       const fromISO = `${from}T00:00:00`;
       const toISO = `${to}T23:59:59`;
 
-      const res = await api.get("/reports/sales", {
+      const res = await api.get("/api/reports/sales", {
         params: { from: fromISO, to: toISO },
       });
 

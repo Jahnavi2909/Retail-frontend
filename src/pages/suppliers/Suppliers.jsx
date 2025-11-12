@@ -37,7 +37,7 @@ const Suppliers = () => {
   // ✅ Fetch suppliers from backend
   const fetchSuppliers = async () => {
     try {
-      const res = await api.get("/suppliers");
+      const res = await api.get("/api/suppliers");
       const list = Array.isArray(res.data?.data) ? res.data.data : [];
       setSuppliers(list);
       setPage(0);
@@ -76,14 +76,14 @@ const Suppliers = () => {
 
     try {
       if (editingSupplier) {
-        const res = await api.put(`/suppliers/${editingSupplier.id}`, payload);
+        const res = await api.put(`/api/suppliers/${editingSupplier.id}`, payload);
         const updated = res.data?.data || res.data;
         setSuppliers((prev) =>
           prev.map((s) => (s.id === updated.id ? updated : s))
         );
         showToast("Supplier updated successfully!", "success");
       } else {
-        const res = await api.post("/suppliers", payload);
+        const res = await api.post("/api/suppliers", payload);
         const created = res.data?.data || res.data;
         setSuppliers((prev) => [...prev, created]);
         showToast("Supplier added successfully!", "success");
@@ -120,7 +120,7 @@ const Suppliers = () => {
       return;
 
     try {
-      await api.delete(`/suppliers/${supplierId}`);
+      await api.delete(`/api/suppliers/${supplierId}`);
       setSuppliers((prev) => prev.filter((s) => s.id !== supplierId));
       showToast("Supplier deleted successfully!", "success");
 

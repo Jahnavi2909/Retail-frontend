@@ -4,7 +4,7 @@ import Cookies from "js-cookie";
 
 // 👇 Remove this line completely (not needed)
 // export const API_BASE = "https://d1x2sux8i7gb9h.cloudfront.net/api";
-export const API_BASE = "https://retail-backend-production-11c0.up.railway.app/api";
+// export const API_BASE = "https://retail-backend-production-11c0.up.railway.app/api";
 
 const api = axios.create({
   // ✅ This now directly points to your Railway backend

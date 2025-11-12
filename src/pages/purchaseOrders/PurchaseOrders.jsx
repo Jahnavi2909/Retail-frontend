@@ -39,7 +39,7 @@ const PurchaseOrders = () => {
   // ✅ fetch suppliers using `api`
   const fetchSuppliers = async () => {
     try {
-      const res = await api.get("/suppliers");
+      const res = await api.get("/api/suppliers");
       const list = Array.isArray(res.data?.data) ? res.data.data : [];
       setSuppliers(list);
     } catch (err) {
@@ -51,7 +51,7 @@ const PurchaseOrders = () => {
   // ✅ fetch purchase orders using `api`
   const fetchOrders = async () => {
     try {
-      const res = await api.get("/purchase-orders");
+      const res = await api.get("/api/purchase-orders");
       const list = Array.isArray(res.data?.data) ? res.data.data : [];
       setOrders(list);
       setPage(0);
@@ -86,12 +86,12 @@ const PurchaseOrders = () => {
 
     try {
       if (editingOrder) {
-        const res = await api.put(`/purchase-orders/${editingOrder.id}`, payload);
+        const res = await api.put(`/api/purchase-orders/${editingOrder.id}`, payload);
         const updated = res.data?.data || res.data;
         setOrders((prev) => prev.map((o) => (o.id === updated.id ? updated : o)));
         showToast("Order updated successfully!", "success");
       } else {
-        const res = await api.post("/purchase-orders", payload);
+        const res = await api.post("/api/purchase-orders", payload);
         const created = res.data?.data || res.data;
         setOrders((prev) => [...prev, created]);
         showToast("Order added successfully!", "success");
@@ -113,7 +113,7 @@ const PurchaseOrders = () => {
     if (!window.confirm("Are you sure you want to delete this order?")) return;
 
     try {
-      await api.delete(`/purchase-orders/${orderId}`);
+      await api.delete(`/api/purchase-orders/${orderId}`);
       setOrders((prev) => prev.filter((o) => o.id !== orderId));
       showToast("Order deleted successfully!", "success");
 
